@@ -79,3 +79,93 @@ function renderIssues() {
   else if (currentTab === 'closed') issues = allIssues.filter(function(i){ return (i.status||i.state||'').toLowerCase() === 'closed'; });
   renderIssuesList(issues);
 }
+
+
+
+
+function renderIssuesList(issues) {
+  document.getElementById('issues-count').textContent = issues.length + ' Issue' + (issues.length !== 1 ? 's' : '');
+  if (!issues.length) {
+    document.getElementById('issues-container').innerHTML = '<div class="no-results">No issues found.</div>';
+    return;
+  }
+  let html = '<div class="issues-grid">';
+  for (let i = 0; i < issues.length; i++) { html += buildCard(issues[i]); }
+  html += '</div>';
+  document.getElementById('issues-container').innerHTML = html;
+}
+
+function getStatus(issue) { return ((issue.status || issue.state) || 'open').toLowerCase(); }
+function getPriority(issue) { return ((issue.priority) || 'LOW').toUpperCase(); }
+function getLabels(issue) {
+  if (Array.isArray(issue.labels)) return issue.labels;
+  if (typeof issue.labels === 'string') return issue.labels.split(',').map(function(l){ return l.trim(); }).filter(Boolean);
+  return [];
+}
+function labelClass(label) {
+  var l = label.toLowerCase();
+  if (l.includes('bug')) return 'label-bug';
+  if (l.includes('enhanc')) return 'label-enhancement';
+  if (l.includes('help')) return 'label-help';
+  return 'label-default';
+}
+function formatDate(d) {
+  if (!d) return '';
+  try { return new Date(d).toLocaleDateString('en-US'); } catch(e) { return d; }
+}
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function getIssueId(issue) { return issue.id || issue._id || 0; }
+
+function buildCard(issue) {
+  var status = getStatus(issue);
+  var priority = getPriority(issue);
+  var labels = getLabels(issue);
+  var statusImg = status === 'open' ? IMAGES.open : IMAGES.closed;
+  let labelsHTML = labels.map(function(l){ return '<span class="label-tag ' + labelClass(l) + '">' + esc(l.toUpperCase()) + '</span>'; }).join('');
+  var author = esc(issue.author || issue.user || issue.assignee || 'Unknown');
+  return '<div class="issue-card ' + status + '-card" onclick="openModal(' + getIssueId(issue) + ')">' +
+    '<div class="card-top"><img src="' + statusImg + '" class="card-status-icon" alt="' + status + '"/><span class="priority-badge priority-' + priority + '">' + priority + '</span></div>' +
+    '<div class="card-title">' + esc(issue.title || 'Untitled') + '</div>' +
+    '<div class="card-desc">' + esc(issue.description || issue.body || '') + '</div>' +
+    '<div class="card-labels">' + labelsHTML + '</div>' +
+    '<div class="card-footer"><span>#' + (issue.number || getIssueId(issue)) + ' by ' + author + '</span><span>' + formatDate(issue.createdAt || issue.created_at) + '</span></div>' +
+    '</div>';
+}
+
+async function openModal(id) {
+  document.getElementById('modal-overlay').style.display = 'flex';
+  document.getElementById('modal-inner').innerHTML = '<div class="spinner-wrap"><div class="spinner"></div></div>';
+  try {
+    const res = await fetch('https://phi-lab-server.vercel.app/api/v1/lab/issue/' + id);
+    const raw = await res.json();
+    const data = raw.issue || raw.data || raw;
+    const status = getStatus(data);
+    const priority = getPriority(data);
+    const labels = getLabels(data);
+    const labelsHTML = labels.map(function(l){ return '<span class="label-tag ' + labelClass(l) + '">' + esc(l.toUpperCase()) + '</span>'; }).join('');
+    document.getElementById('modal-inner').innerHTML =
+      '<div class="modal-title">' + esc(data.title || 'Untitled') + '</div>' +
+      '<div class="modal-meta">' +
+        '<span class="modal-status-badge badge-' + status + '">' + status.charAt(0).toUpperCase() + status.slice(1) + '</span>' +
+        '<span>Opened by <strong>' + esc(data.author || data.user || data.assignee || 'Unknown') + '</strong></span>' +
+        '<span>&bull; ' + formatDate(data.createdAt || data.created_at) + '</span>' +
+      '</div>' +
+      '<div class="modal-labels">' + labelsHTML + '</div>' +
+      '<div class="modal-body-text">' + esc(data.description || data.body || 'No description provided.') + '</div>' +
+      '<div class="modal-info-grid">' +
+        '<div class="modal-info-item"><label>Assignee</label><span>' + esc(data.assignee || data.author || data.user || '—') + '</span></div>' +
+        '<div class="modal-info-item"><label>Priority</label><span class="priority-badge priority-' + priority + '">' + priority + '</span></div>' +
+      '</div>' +
+      '<button class="btn-close-modal" onclick="closeModal()">Close</button><div style="clear:both"></div>';
+  } catch(e) {
+    document.getElementById('modal-inner').innerHTML = '<div class="no-results">Failed to load issue.</div>';
+  }
+}
+
+function closeModal() { document.getElementById('modal-overlay').style.display = 'none'; }
+function closeModalOutside(e) { if (e.target === document.getElementById('modal-overlay')) closeModal(); }
+
+
